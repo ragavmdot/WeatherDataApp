@@ -15,11 +15,13 @@ namespace WeatherDataApp.Controllers
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
         private readonly AppDbContext _context;
-        public WeatherForecastController(IHttpClientFactory httpClientFactory, IConfiguration configuration, AppDbContext context)
+        private readonly ILogger<WeatherForecastController> _logger;
+        public WeatherForecastController(IHttpClientFactory httpClientFactory, IConfiguration configuration, AppDbContext context, ILogger<WeatherForecastController> logger)
         {
             _httpClient = httpClientFactory.CreateClient();
             _configuration = configuration;
             _context = context;
+            _logger = logger;
         }
 
 
@@ -106,20 +108,36 @@ namespace WeatherDataApp.Controllers
         [Route("GetAllWeatherData")]
         public async Task<IActionResult> GetExistingWeatherForecastData()
         {
-            var content = await _context.WeatherData.ToListAsync();
-
-            if (content == null)
+            _logger.LogInformation("Starting GetAllWeatherData request at {Timestamp}", DateTime.UtcNow);
+            
+            try
             {
-                return NotFound("No records exist.");
-            }
+                _logger.LogDebug("Querying database for all weather data records");
+                var content = await _context.WeatherData.ToListAsync();
 
-            List<WeatherDataResponse> recordsList = new List<WeatherDataResponse>();
-            foreach (var item in content)
+                if (content == null || !content.Any())
+                {
+                    _logger.LogWarning("No weather data records found in database");
+                    return NotFound("No records exist.");
+                }
+
+                _logger.LogInformation("Found {RecordCount} weather data records", content.Count);
+
+                List<WeatherDataResponse> recordsList = new List<WeatherDataResponse>();
+                foreach (var item in content)
+                {
+                    _logger.LogDebug("Deserializing weather data for record ID: {RecordId}", item.Id);
+                    recordsList.Add(JsonSerializer.Deserialize<WeatherDataResponse>(item.WeatherData));
+                }
+
+                _logger.LogInformation("Successfully processed {ProcessedCount} weather data records", recordsList.Count);
+                return Ok(recordsList);
+            }
+            catch (Exception ex)
             {
-                recordsList.Add(JsonSerializer.Deserialize<WeatherDataResponse>(item.WeatherData));
+                _logger.LogError(ex, "Error occurred while retrieving all weather data");
+                return StatusCode(500, "An error occurred while retrieving weather data");
             }
-
-            return Ok(recordsList);
         }
 
 
